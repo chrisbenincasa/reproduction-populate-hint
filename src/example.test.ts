@@ -8,7 +8,7 @@ import {
   OneToMany,
   PrimaryKey,
   Rel,
-} from "@mikro-orm/sqlite";
+} from "@mikro-orm/better-sqlite";
 
 @Entity()
 class A {
@@ -26,18 +26,12 @@ class B {
 
   @ManyToMany(() => A, "b")
   a = new Collection<A>(this);
-
-  @ManyToOne(() => C, { nullable: true })
-  c?: Rel<C>;
 }
 
 @Entity()
 class C {
   @PrimaryKey()
   id!: number;
-
-  @OneToMany(() => B, (b) => b.c)
-  b = new Collection<B>(this);
 }
 
 let orm: MikroORM;
@@ -49,6 +43,10 @@ function takesALoadedAandB(a: Loaded<A, "b">) {}
 function takesEverything(a: Loaded<A, "b" | "b.c">) {}
 
 function takesJustNested(a: Loaded<A, "b.c">) {}
+
+function getRange(end: number, start: number = 0): number[] {
+  return new Array(end - start + 1).fill(0).map((_, i) => i + start);
+}
 
 beforeAll(async () => {
   orm = await MikroORM.init({
@@ -65,26 +63,30 @@ afterAll(async () => {
 });
 
 test("basic CRUD example", async () => {
-  const loadedA = await orm.em.findOneOrFail(A, 1);
-  takesALoadedA(loadedA);
+  const em = orm.em.fork();
+  // This breaks at >=998
+  const bs = getRange(1000).map((i) => em.create(B, { id: i }));
+  await em.persistAndFlush(bs);
 
-  const loadedAB = await orm.em.findOneOrFail(A, 1, { populate: ["b"] });
-  // @ts-expect-error
-  takesALoadedAandB(loadedA);
-  takesALoadedAandB(loadedAB);
+  const a = em.create(A, { id: 1 });
+  await em.persistAndFlush(a);
 
-  const loadedABC = await orm.em.findOneOrFail(A, 1, {
-    populate: ["b", "b.c"],
-  });
-  // @ts-expect-error
-  takesEverything(loadedA);
-  // @ts-expect-error -- this should fail? We only have loaded 'b'
-  takesEverything(loadedAB);
-  takesEverything(loadedABC); // This is right
+  a.b.add(bs);
+  await em.persistAndFlush(a);
 
-  // @ts-expect-error
-  takesJustNested(loadedA);
-  // @ts-expect-error -- should this fail?
-  takesJustNested(loadedAB);
-  takesJustNested(loadedABC);
+  const newBs = getRange(2001, 1001).map((i) => em.create(B, { id: i }));
+  await em.persistAndFlush(newBs);
+
+  // Break
+  a.b.remove(bs);
+  a.b.add(newBs);
+  await em.persistAndFlush(a);
+
+  // Break 2
+  // await em.transactional(async (em) => {
+  //   a.b.removeAll();
+  //   await em.persistAndFlush(a);
+  //   a.b.set(newBs);
+  //   await em.persistAndFlush(a);
+  // });
 });
