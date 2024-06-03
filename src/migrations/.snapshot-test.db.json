@@ -22,13 +22,26 @@
           "enumItems": [
             "a",
             "b",
-            "c"
+            "c",
+            "d",
+            "e"
           ],
           "mappedType": "enum"
         }
       },
       "name": "a",
       "indexes": [
+        {
+          "keyName": "a_t_index",
+          "columnNames": [
+            "t"
+          ],
+          "composite": false,
+          "constraint": false,
+          "primary": false,
+          "unique": false,
+          "expression": "create unique index `test` on `a` (t) where id > 2"
+        },
         {
           "keyName": "primary",
           "columnNames": [
